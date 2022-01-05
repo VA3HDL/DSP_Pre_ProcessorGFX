@@ -20,7 +20,7 @@
 #include <menuIO/chainStream.h>
 
 File myFile;
-char fileName[] = "settings.txt";
+int myPreset = 0;
 const int chipSelect = 10;
 char charRead;
 
@@ -36,7 +36,7 @@ using namespace Menu;
 #define menuFont X11fixed7x14
 #define fontW 7
 #define fontH 14
-// #define OPTIMIZE_I2C 1
+//#define OPTIMIZE_I2C 1
 
 SSD1306AsciiWire oled;
 
@@ -54,6 +54,7 @@ void timerIsr() {
 
 AudioControlSGTL5000     audioShield;
 AudioInputI2S            audioInput;
+AudioOutputI2S           audioOutput;  // audio shield: headphones & line-out
 AudioAnalyzePeak         peakPre;
 AudioAnalyzePeak         peakPost;
 AudioAnalyzeFFT256       fftValues;
@@ -70,7 +71,6 @@ AudioMixer4              M4;
 AudioMixer4              EQ_Mix1;
 AudioMixer4              EQ_Mix2;
 AudioMixer4              EQ_Mix3;
-AudioOutputI2S           audioOutput;  // audio shield: headphones & line-out
 AudioConnection          patchCordc1(audioInput, 0, peakPre, 0);
 AudioConnection          patchCordc2(audioInput, 0, CompMix, 0);
 AudioConnection          patchCordc3(audioInput, 0, M4, 1);
@@ -207,7 +207,8 @@ float myCompDec = 1.0;
 
 result compON(eventMask e) {
   compressorFlag = 1;
-  audioShield.audioPreProcessorEnable();
+  //audioShield.audioPreProcessorEnable();
+  //audioShield.audioPostProcessorEnable();
   audioShield.autoVolumeControl( myCompGain    // Maximum gain that can be applied 0 - 0 dB / 1 - 6.0 dB / 2 - 12 dB
                                  , myCompResp  // Integrator Response 0 - 0 mS / 1 - 25 mS / 2 - 50 mS / 3 - 100 mS
                                  , myCompHard  // hardLimit
@@ -222,7 +223,7 @@ result compON(eventMask e) {
 //Compressor off
 result compOFF(eventMask e) {
   compressorFlag = 0;
-  audioShield.audioProcessorDisable();
+  //audioShield.audioProcessorDisable();
   audioShield.autoVolumeDisable();
   Serial.println(""); Serial.print(e); Serial.println(" compOFF executed, proceed menu"); Serial.flush();
   return proceed;
@@ -238,16 +239,16 @@ MENU(subLevels, "Volume Levels", showEvent, anyEvent, wrapStyle
 TOGGLE(myCompGain, chooseCompGain, "Comp. Gain: ", doNothing, noEvent, wrapStyle
        , VALUE( "0 dB", 0, SetCompressorParameters, updateEvent)
        , VALUE( "6 dB", 1, SetCompressorParameters, updateEvent)
-       , VALUE("12 dB", 2, SetCompressorParameters, updateEvent)       
+       , VALUE("12 dB", 2, SetCompressorParameters, updateEvent)
       );
 
 TOGGLE(myCompResp, chooseCompResp, "Response: ", doNothing, noEvent, wrapStyle
        , VALUE(  "0 ms", 0, SetCompressorParameters, updateEvent)
        , VALUE( "25 ms", 1, SetCompressorParameters, updateEvent)
        , VALUE( "50 ms", 2, SetCompressorParameters, updateEvent)
-       , VALUE("100 ms", 3, SetCompressorParameters, updateEvent)       
+       , VALUE("100 ms", 3, SetCompressorParameters, updateEvent)
       );
-      
+
 TOGGLE(myCompHard, setHardLimit, "Hard Limit: ", doNothing, noEvent, wrapStyle
        , VALUE("On", 1, SetCompressorParameters, updateEvent)
        , VALUE("Off", 0, SetCompressorParameters, updateEvent)
@@ -256,7 +257,7 @@ TOGGLE(myCompHard, setHardLimit, "Hard Limit: ", doNothing, noEvent, wrapStyle
 MENU(subComp, "Compressor cfg", showEvent, anyEvent, wrapStyle
      , EXIT(" <- Back")
      , SUBMENU(chooseCompGain)
-     , SUBMENU(chooseCompResp)          
+     , SUBMENU(chooseCompResp)
      , SUBMENU(setHardLimit)
      , FIELD(  myCompThr, "Thresh.", " dB", -96, 0, 1, 0.1, SetCompressorParameters, updateEvent, noStyle)
      , FIELD(  myCompAtt, "Attack", " dB/s", 0, 10, 1, 0.1, SetCompressorParameters, updateEvent, noStyle)
@@ -327,9 +328,10 @@ result toggleAudioSpectrum(eventMask e) {
 }
 
 MENU(sdCard, "SD Card", doNothing, noEvent, wrapStyle
-     , OP("Read settings", readFromFile, enterEvent)
-     , OP("Save settings",  writeToFile, enterEvent)
-     , OP("Del. settings",   deleteFile, enterEvent)
+     , FIELD(myPreset, "Select preset", "", 0, 9, 1, , doNothing, noEvent, wrapStyle)
+     , OP("Read preset", readFromFile, enterEvent)
+     , OP("Save preset",  writeToFile, enterEvent)
+     , OP("Del. preset",   deleteFile, enterEvent)
      , EXIT(" <- Back")
     );
 
@@ -513,6 +515,9 @@ void SetAudioShield() {
   audioShield.dacVolume(1);
   audioShield.dacVolumeRamp();
 
+  audioShield.audioPreProcessorEnable();
+  audioShield.audioPostProcessorEnable();
+
   CompMix.gain(0, 1);
 
   if (equalizerFlag == 1) {
@@ -541,7 +546,8 @@ void SetCompressorParameters() {
   Serial.print(" Mic Gain: "); Serial.print(micGainSet);
 
   if (compressorFlag == 1) {
-    audioShield.audioPreProcessorEnable();
+    //audioShield.audioPreProcessorEnable();
+    //audioShield.audioPostProcessorEnable();
     audioShield.autoVolumeControl( myCompGain    // Maximum gain that can be applied 0 - 0 dB / 1 - 6.0 dB / 2 - 12 dB
                                    , myCompResp  // Integrator Response 0 - 0 mS / 1 - 25 mS / 2 - 50 mS / 3 - 100 mS
                                    , myCompHard  // hardLimit
@@ -691,9 +697,9 @@ void displayAudioSpectrum() {
     if (peakPost.available()) {
       peak = peakPost.read();
       peakM = map(peak, 0.0, 1.0, 0, 128);
-      display.drawFastHLine(0, 14, 128, SSD1306_BLACK);
+      display.drawFastHLine(0, 15, 128, SSD1306_BLACK);
     }
-    display.drawFastHLine(0, 14, peakM, SSD1306_WHITE);
+    display.drawFastHLine(0, 15, peakM, SSD1306_WHITE);
 
     if (fftValues.available()) {
       n = fftValues.read(fftOctTab[bar * 2], fftOctTab[bar * 2 + 1]);
@@ -732,10 +738,13 @@ void displayAudioSpectrum() {
 
 void readFromFile()
 {
-  byte i = 0; //counter
-  char inputString[100]; //string to hold read string
+  byte i = 0;
+  char inputString[100];
+  char fileName[13];
+  char filePref[] = "settings";
+  char fileExtn[] = ".txt";
+  sprintf(fileName, "%s%i%s", filePref, myPreset, fileExtn);
   Serial.println();
-  //now read it back and show on Serial monitor
   // Check to see if the file exists:
   if (!SD.exists(fileName)) {
     Serial.print(fileName);
@@ -860,6 +869,7 @@ void readFromFile()
   oled.clear();
   oled.setCursor(0, 0);
   oled.println("Settings read");
+  oled.println(fileName);
   // Apply settings loaded
   Serial.println("Applying settings loaded to the AudioShield");
   SetAudioShield();
@@ -868,6 +878,10 @@ void readFromFile()
 void writeToFile()
 {
   Serial.println();
+  char fileName[13];
+  char filePref[] = "settings";
+  char fileExtn[] = ".txt";
+  sprintf(fileName, "%s%i%s", filePref, myPreset, fileExtn);
   deleteFile();
   myFile = SD.open(fileName, FILE_WRITE);
   if (myFile) // it opened OK
@@ -900,6 +914,7 @@ void writeToFile()
     oled.clear();
     oled.setCursor(0, 0);
     oled.println("Settings saved");
+    oled.println(fileName);
   }
   else
     Serial.println("Error opening file");
@@ -908,6 +923,10 @@ void writeToFile()
 void deleteFile()
 {
   Serial.println();
+  char fileName[13];
+  char filePref[] = "settings";
+  char fileExtn[] = ".txt";
+  sprintf(fileName, "%s%i%s", filePref, myPreset, fileExtn);
   //delete a file:
   if (SD.exists(fileName))
   {
